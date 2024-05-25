@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnomalyDetect</title>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: #fff;
+            padding: 2em;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 300px;
+        }
+        .input-group {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1em;
+        }
+        .input-group label {
+            width: 40%;
+        }
+        .input-group input {
+            width: 55%;
+        }
+        input[type="text"], input[type="submit"], button {
+            width: 100%;
+            padding: 0.5em;
+            margin-top: 0.5em;
+            font-size: 1em;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        input[type="submit"], button {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            border: none;
+        }
+        input[type="submit"]:hover, button:hover {
+            background-color: #45a049;
+        }
+        #result-page {
+            display: none;
+            width: 90%;
+            max-width: 1200px;
+            margin: 2em auto;
+        }
+        .container-results {
+            display: grid;
+            grid-template-columns: 1fr 3fr;
+            gap: 1em;
+        }
+        .sidebar {
+            background: #fff;
+            padding: 1em;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            height: 70vh;
+            overflow-y: auto;
+        }
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1em;
+        }
+        .chart-container {
+            background: #fff;
+            padding: 1em;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            height: 300px;
+        }
+        #back-button {
+            background-color: #d9534f;
+            color: white;
+            cursor: pointer;
+            border: none;
+            padding: 0.5em 1em;
+            font-size: 1em;
+            border-radius: 4px;
+            margin-top: 1em;
+        }
+        #back-button:hover {
+            background-color: #c9302c;
+        }
+        #loading {
+            display: none;
+            text-align: center;
+            margin-top: 1em;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #f3f3f3;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 1em;
+        }
+
+        .progress {
+            width: 0;
+            height: 1em;
+            background-color: #4CAF50;
+            border-radius: 4px;
+            transition: width 0.5s ease-in-out;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1em 0;
+        }
+        th, td {
+            padding: 0.5em;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #f4f4f9;
+        }
+    </style>
+    <script>
+        $(function() {
+            $("#datetime1, #datetime2").flatpickr({
+                enableTime: true,
+                dateFormat: "Y-m-d H:i:S",
+                time_24hr: true,
+                enableSeconds: true,
+                locale: {
+                    firstDayOfWeek: 1,
+                    weekdays: {
+                        shorthand: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+                        longhand: ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'],
+                    },
+                    months: {
+                        shorthand: ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'],
+                        longhand: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
+                    },
+                    ordinal: () => "",
+                    rangeSeparator: " — ",
+                    weekAbbreviation: "Нед.",
+                    scrollTitle: "Прокрутите для увеличения",
+                    toggleTitle: "Нажмите для переключения",
+                }
+            });
+        });
+
+        async function showResultsPage() {
+            const datetime1 = document.getElementById('datetime1').value;
+            const datetime2 = document.getElementById('datetime2').value;
+            
+            if (!datetime1 || !datetime2) {
+                alert('Пожалуйста, введите все данные.');
+                return;
+            }
+
+            const data = { datetime1, datetime2 };
+
+            document.getElementById('loading').style.display = 'block';
+            updateProgressBar(25);
+
+            try { 
+                const response = await fetch('http://localhost:8090/echo', { 
+                    method: 'POST', 
+                    headers: { 
+                        'Content-Type': 'application/json' 
+                    }, 
+                    body: JSON.stringify(data) 
+                });
+
+                updateProgressBar(50);
+
+                const responseData = await response.json(); 
+                console.log(responseData); 
+
+                const range0 = responseData.range_0; 
+                const range1 = responseData.range_1; 
+                const range2 = responseData.range_2; 
+                const range3 = responseData.range_3; 
+                const data0 = responseData.data_0; 
+                const data1 = responseData.data_1; 
+                const data2 = responseData.data_2; 
+                const data3 = responseData.data_3; 
+
+                const metricsMapping = {
+                    "range_0": "Web Response",
+                    "range_1": "Throughput",
+                    "range_2": "APDEX",
+                    "range_3": "Error"
+                };
+
+                const anomaliesList = document.getElementById('anomalies-list');
+                anomaliesList.innerHTML = ''; 
+
+                const metricDataArray = [range0, range1, range2, range3];
+                
+                metricDataArray.forEach((metricData, index) => {
+                    const metricName = metricsMapping[`range_${index}`];
+                    const table = document.createElement('table');
+                    const header = document.createElement('thead');
+                    const headerRow = document.createElement('tr');
+                    headerRow.innerHTML = `<th colspan="3"><strong>${metricName}</strong></th>`;
+                    header.appendChild(headerRow);
+                    table.appendChild(header);
+
+                    const subHeaderRow = document.createElement('tr');
+                    subHeaderRow.innerHTML = `<th>Дата и время начала</th><th>Дата и время конца</th><th>Вероятность</th>`;
+                    header.appendChild(subHeaderRow);
+
+                    const body = document.createElement('tbody');
+                    const parsedData = JSON.parse(metricData.replace(/'/g, '"').replace(/\(/g, '[').replace(/\)/g, ']'));
+                    parsedData.forEach(([start, end, metricValue]) => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `<td>${start.substring(0, start.indexOf('.'))}</td>
+                        <td>${end.substring(0, end.indexOf('.'))}</td><td>${parseFloat(metricValue).toFixed(2)}</td>`;
+                        body.appendChild(row);
+                    });
+
+                    table.appendChild(body);
+                    anomaliesList.appendChild(table);
+                });
+
+                updateChart('Web Response', data0, 'rgba(75, 192, 192, 1)');
+                updateChart('Throughput', data1, 'rgba(255, 99, 132, 1)');
+                updateChart('APDEX', data2, 'rgba(54, 162, 235, 1)');
+                updateChart('Error', data3, 'rgba(255, 206, 86, 1)');
+
+                updateProgressBar(100);
+            } catch (error) { 
+                console.error('Error:', error); 
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('input-page').style.display = 'none';
+            document.getElementById('result-page').style.display = 'block';
+        }
+
+        function updateProgressBar(value) {
+            const progressBar = document.querySelector('.progress');
+            progressBar.style.width = value + '%';
+        }
+
+        function showInputPage() {
+            document.getElementById('input-page').style.display = 'block';
+            document.getElementById('result-page').style.display = 'none';
+        }
+
+        function generateLabels(count) {
+            let labels = [];
+            for (let i = 0; i < count; i++) {
+                labels.push('');
+            }
+            return labels;
+        }
+
+        function updateChart(chartId, data, color) {
+            const ctx = document.getElementById(chartId).getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: generateLabels(data.length),
+                    datasets: [{
+                        label: chartId,
+                        data: data,
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: color,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</head>
+<body>
+    <div id="input-page" class="container">
+        <h1>Введите диапазон поиска аномалий</h1>
+        <form onsubmit="event.preventDefault(); showResultsPage();">
+            <div class="input-group">
+                <label for="datetime1">Начало:</label>
+                <input type="text" id="datetime1" name="datetime1">
+            </div>
+            <div class="input-group">
+                <label for="datetime2">Конец:</label>
+                <input type="text" id="datetime2" name="datetime2">
+            </div>
+            <input type="submit" value="Найти">
+        </form>
+        <div id="loading">
+            <p>Загрузка...</p>
+            <div class="progress-bar">
+                <div class="progress"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="result-page">
+        <div class="container-results">
+            <div class="sidebar">
+                <h2>Аномалии</h2>
+                <div id="anomalies-list">
+                </div>
+            </div>
+            <div class="content">
+                <div class="chart-container">
+                    <canvas id="Web Response"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="Throughput"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="APDEX"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="Error"></canvas>
+                </div>
+            </div>
+        </div>
+        <button id="back-button" onclick="location.reload()">Назад</button>
+    </div>
+</body>
+</html>
